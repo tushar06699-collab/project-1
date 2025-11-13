@@ -88,6 +88,9 @@ function fetchBookDetails(type) {
 }
 
 // 🟢 Issue Book
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwV_3hfax8kOQsy45EzmnKXIliCXZBhWP5irkprou5vbAmg_yKwnsaLB0cKiZlsj_t6/exec";
+
+// 🟢 Issue Book
 function issueBook() {
   const code = document.getElementById("issueBookId").value.trim();
   const student = document.getElementById("issueTo").value.trim();
@@ -100,7 +103,7 @@ function issueBook() {
 
   b.issuedCount = (b.issuedCount || 0) + 1;
 
-  records.push({
+  const record = {
     code: b.code,
     name: b.name,
     author: b.author,
@@ -108,10 +111,19 @@ function issueBook() {
     student,
     date: new Date().toLocaleString(),
     status: "Issued",
-  });
+  };
 
+  records.push(record);
   save();
   render();
+
+  // 🧾 also send to Google Sheet
+  fetch(SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...record, action: "ISSUED" })
+  });
+
   alert(`✅ Book "${b.name}" issued to ${student}`);
   resetIssue();
 }
@@ -131,6 +143,14 @@ function returnBook() {
 
   save();
   render();
+
+  // 🧾 also send to Google Sheet
+  fetch(SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...lastIssued, action: "RETURNED" })
+  });
+
   alert(`📗 Book "${b.name}" returned successfully`);
   resetReturn();
 }
