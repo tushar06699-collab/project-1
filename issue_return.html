@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Issue / Return Books</title>
+<style>
+  body{font-family:'Poppins',sans-serif;background:#f8f9fa;margin:0;padding:20px;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+  h2{margin:0;color:#022;}
+  input,button{padding:10px;margin:6px;border-radius:8px;border:1px solid #ccc;}
+  button{cursor:pointer;font-weight:600;border:none;}
+  .btn-main{background:linear-gradient(90deg,#34d399,#3ec8ff);}
+  .btn-danger{background:linear-gradient(90deg,#fb7185,#f97316);color:white;}
+  table{width:100%;border-collapse:collapse;margin-top:10px;}
+  th,td{border:1px solid #ddd;padding:8px;text-align:center;}
+  th{background:#e7f3f0;}
+  .details-box{background:white;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.1);padding:10px;margin:10px 0;}
+  .details-box p{margin:4px 0;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h2>🔄 Issue / Return Books</h2>
+  <div>
+    <button onclick="window.location.href='books.html'" class="btn-main">Go to Books</button>
+    <button onclick="logout()" class="btn-danger">Logout</button>
+  </div>
+</div>
+
+<div>
+  <h3>📘 Issue Book</h3>
+  <input id="issueBookId" placeholder="Enter Book Code" oninput="fetchBookDetails('issue')">
+  <div id="issueDetails" class="details-box" style="display:none;"></div>
+  <input id="issueTo" placeholder="Student Name / Roll No">
+  <button onclick="issueBook()" class="btn-main">Issue</button>
+</div>
+
+<div>
+  <h3>📗 Return Book</h3>
+  <input id="returnBookId" placeholder="Enter Book Code" oninput="fetchBookDetails('return')">
+  <div id="returnDetails" class="details-box" style="display:none;"></div>
+  <button onclick="returnBook()" class="btn-main">Return</button>
+</div>
+
+<h3>📋 Records</h3>
+<table id="record-table"></table>
+
+<script>
+if (localStorage.getItem("loggedIn") !== "true") window.location.href = "login.html";
+
+// ✅ unified key names
+const BOOKS_KEY = "booksData_v2";
+const RECORDS_KEY = "recordsData_v2";
+
+// ✅ load data safely
+let books = JSON.parse(localStorage.getItem(BOOKS_KEY) || "[]");
+let records = JSON.parse(localStorage.getItem(RECORDS_KEY) || "[]");
+
+if (!Array.isArray(books)) books = [];
+if (!Array.isArray(records)) records = [];
+
+// 🔍 Fetch book details automatically
+function fetchBookDetails(type) {
+  const inputId = type === "issue" ? "issueBookId" : "returnBookId";
+  const boxId = type === "issue" ? "issueDetails" : "returnDetails";
+  const code = document.getElementById(inputId).value.trim();
+  const box = document.getElementById(boxId);
+  if (!code) { box.style.display = "none"; return; }
+
+  const b = books.find(x => (x.code || "").toLowerCase() === code.toLowerCase());
+  if (!b) {
+    box.innerHTML = "<p style='color:red;'>Book not found!</p>";
+    box.style.display = "block";
+    return;
+  }
+
+  const available = (b.copies || 0) - (b.issuedCount || 0);
+
+  box.style.display = "block";
+  box.innerHTML = `
+    <p><b>Book Name:</b> ${b.name || "-"}</p>
+    <p><b>Author:</b> ${b.author || "-"}</p>
+    <p><b>Publisher:</b> ${b.publisher || "-"}</p>
+    <p><b>Available Copies:</b> ${available}</p>
+  `;
+}
+
+// 🟢 Issue Book
+function issueBook() {
+  const code = document.getElementById("issueBookId").value.trim();
+  const student = document.getElementById("issueTo").value.trim();
+  const b = books.find(x => (x.code || "").toLowerCase() === code.toLowerCase());
+  if (!b) return alert("Book not found!");
+  if (!student) return alert("Enter student name!");
+
+  const available = (b.copies || 0) - (b.issuedCount || 0);
+  if (available <= 0) return alert("No available copies left!");
+
+  b.issuedCount = (b.issuedCount || 0) + 1;
+
+  records.push({
+    code: b.code,
+    name: b.name,
+    author: b.author,
+    publisher: b.publisher,
+    student,
+    date: new Date().toLocaleString(),
+    status: "Issued",
+  });
+
+  save();
+  render();
+  alert(`✅ Book "${b.name}" issued to ${student}`);
+  resetIssue();
+}
+
+// 🔵 Return Book
+function returnBook() {
+  const code = document.getElementById("returnBookId").value.trim();
+  const b = books.find(x => (x.code || "").toLowerCase() === code.toLowerCase());
+  if (!b) return alert("Book not found!");
+
+  const lastIssued = [...records].reverse().find(x => x.code === b.code && x.status === "Issued");
+  if (!lastIssued) return alert("No pending issue record found for this book!");
+
+  b.issuedCount = Math.max((b.issuedCount || 1) - 1, 0);
+  lastIssued.status = "Returned";
+  lastIssued.returnDate = new Date().toLocaleString();
+
+  save();
+  render();
+  alert(`📗 Book "${b.name}" returned successfully`);
+  resetReturn();
+}
+
+// 🧾 Render Records
+function render() {
+  const t = document.getElementById("record-table");
+  t.innerHTML = "<tr><th>Book Code</th><th>Name</th><th>Author</th><th>Student</th><th>Issue Date</th><th>Status</th><th>Return Date</th></tr>";
+  records.forEach(r => {
+    t.innerHTML += `
+      <tr>
+        <td>${r.code || "-"}</td>
+        <td>${r.name || "-"}</td>
+        <td>${r.author || "-"}</td>
+        <td>${r.student || "-"}</td>
+        <td>${r.date || "-"}</td>
+        <td>${r.status || "-"}</td>
+        <td>${r.returnDate || "-"}</td>
+      </tr>
+    `;
+  });
+}
+
+// 💾 Save to localStorage
+function save() {
+  localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
+  localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+}
+
+function resetIssue() {
+  issueBookId.value = "";
+  issueTo.value = "";
+  document.getElementById("issueDetails").style.display = "none";
+}
+function resetReturn() {
+  returnBookId.value = "";
+  document.getElementById("returnDetails").style.display = "none";
+}
+function logout() {
+  localStorage.removeItem("loggedIn");
+  window.location.href = "login.html";
+}
+
+render();
+</script>
+</body>
+</html>

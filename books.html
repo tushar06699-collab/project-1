@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Library — Book Management</title>
+
+<!-- XLSX library for Excel import/export -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style>
+  :root{--accent1:#34d399;--accent2:#3ec8ff;--danger:#fb7185;--muted:#444}
+  body{font-family:Inter,system-ui,Arial;margin:0;background:#f3f6f8;padding:20px}
+  .wrap{max-width:1100px;margin:24px auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 8px 30px rgba(2,6,23,0.08)}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
+  h1{margin:0;font-size:20px;color:#022}
+  .controls{display:flex;gap:8px;flex-wrap:wrap}
+  input[type="text"], input[type="number"]{padding:8px;border:1px solid #d1d5db;border-radius:8px}
+  button{padding:8px 12px;border:0;border-radius:8px;cursor:pointer;font-weight:600}
+  .btn-primary{background:linear-gradient(90deg,var(--accent1),var(--accent2));color:#022}
+  .btn-danger{background:linear-gradient(90deg,var(--danger),#fb923c);color:#fff}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+  .grid input{width:100%}
+  table{width:100%;border-collapse:collapse;margin-top:16px}
+  th,td{border:1px solid #e6e9ee;padding:8px;text-align:left;font-size:13px}
+  th{background:#f7fafc}
+  .small{font-size:12px;color:var(--muted)}
+  .file-input{display:inline-block}
+  @media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="top">
+    <h1>📚 Book Management</h1>
+    <div class="controls">
+      <button class="btn-primary" onclick="goToIssueReturn()">Go to Issue / Return</button>
+      <button class="btn-danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <!-- Add single book -->
+  <div>
+    <h3 style="margin:8px 0">Add New Book</h3>
+    <div class="grid">
+      <input id="bookCode" type="text" placeholder="BOOK CODE (required)">
+      <input id="bookAuthor" type="text" placeholder="BOOK AUTHOR">
+      <input id="bookName" type="text" placeholder="BOOK NAME (required)">
+      <input id="bookPublisher" type="text" placeholder="PUBLISHER">
+      <input id="bookPrice" type="number" placeholder="PRICE OF THE BOOK">
+      <input id="bookPages" type="number" placeholder="TOTAL PAGES">
+      <input id="bookClass" type="text" placeholder="BOOK CLASS">
+      <input id="bookCount" type="number" value="1" min="1" placeholder="COPIES">
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-primary" onclick="addBook()">Add Book</button>
+      <label class="file-input">
+        <input id="fileInput" type="file" accept=".xlsx" style="display:none" onchange="importExcel(event)">
+        <button class="btn-primary" onclick="document.getElementById('fileInput').click()">Import Excel</button>
+      </label>
+      <button class="btn-primary" onclick="exportBooks()">Export Books (.xlsx)</button>
+      <button class="btn-danger" onclick="clearAllBooks()">Clear All</button>
+    </div>
+    <div class="small" style="margin-top:8px">
+      Excel columns supported (case sensitive): <b>BOOK CODE, BOOK AUTHOR, BOOK NAME, PUBLISHER, PRICE OF THE BOOK, TOTAL PAGES, BOOK CLASS, COPIES</b>
+    </div>
+  </div>
+
+  <!-- Book table -->
+  <div>
+    <h3 style="margin-top:18px">All Books</h3>
+    <input id="search" type="text" placeholder="Search by code/name/author/class..." oninput="render()" style="width:100%;margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid #e2e8f0">
+    <table id="book-table" aria-live="polite"></table>
+    <div id="pagination" style="text-align:center;margin-top:10px;"></div>
+
+  </div>
+</div>
+
+<script>
+if(localStorage.getItem("loggedIn") !== "true") {
+  window.location.href = "login.html";
+}
+
+const BOOKS_KEY = "booksData_v2";
+let books = JSON.parse(localStorage.getItem(BOOKS_KEY) || "[]");
+
+function save() {
+  localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
+}
+
+function goToIssueReturn(){
+  location.href = "issue_return.html";
+}
+function logout(){
+  localStorage.removeItem("loggedIn");
+  location.href = "login.html";
+}
+
+function addBook(){
+  const code = bookCode.value.trim();
+  const name = bookName.value.trim();
+  if(!code || !name) return alert("Please enter at least BOOK CODE and BOOK NAME.");
+
+  const book = {
+    code,
+    author: bookAuthor.value.trim(),
+    name,
+    publisher: bookPublisher.value.trim(),
+    price: Number(bookPrice.value) || "",
+    pages: Number(bookPages.value) || "",
+    class: bookClass.value.trim(),
+    copies: Number(bookCount.value) || 1,
+    issuedCount: 0
+  };
+
+  const existing = books.find(b => b.code.toLowerCase() === code.toLowerCase());
+  if(existing){
+    existing.copies += book.copies;
+  } else {
+    books.push(book);
+  }
+  save();
+  clearInputs();
+  render();
+}
+
+function clearInputs(){
+  ["bookCode","bookAuthor","bookName","bookPublisher","bookPrice","bookPages","bookClass"].forEach(id=>document.getElementById(id).value="");
+  bookCount.value = 1;
+}
+
+function importExcel(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:"" });
+    let count = 0;
+    rows.forEach(r=>{
+      const code = (r["BOOK CODE"]||"").toString().trim();
+      const name = (r["BOOK NAME"]||"").toString().trim();
+      if(!code || !name) return;
+      const b = books.find(x=>x.code.toLowerCase()===code.toLowerCase());
+      if(b) b.copies += Number(r["COPIES"]||1);
+      else books.push({
+        code,
+        author:r["BOOK AUTHOR"]||"",
+        name,
+        publisher:r["PUBLISHER"]||"",
+        price:r["PRICE OF THE BOOK"]||"",
+        pages:r["TOTAL PAGES"]||"",
+        class:r["BOOK CLASS"]||"",
+        copies:Number(r["COPIES"]||1),
+        issuedCount:0
+      });
+      count++;
+    });
+    save(); render();
+    alert(`${count} books imported.`);
+    evt.target.value = "";
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function exportBooks(){
+  if(!books.length) return alert("No books to export.");
+  const ws = XLSX.utils.json_to_sheet(books);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Books");
+  XLSX.writeFile(wb, "books_export.xlsx");
+}
+
+let currentPage = 1;
+const PAGE_SIZE = 50;
+
+function render(){
+  const search = document.getElementById("search").value.trim().toLowerCase();
+  const table = document.getElementById("book-table");
+  const pagination = document.getElementById("pagination");
+
+  const filtered = books.filter(b =>
+    (b.code||"").toLowerCase().includes(search) ||
+    (b.name||"").toLowerCase().includes(search) ||
+    (b.author||"").toLowerCase().includes(search) ||
+    (b.class||"").toLowerCase().includes(search)
+  );
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  if(currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage-1)*PAGE_SIZE;
+  const end = start + PAGE_SIZE;
+  const pageBooks = filtered.slice(start, end);
+
+  table.innerHTML = `
+    <tr>
+      <th>Code</th><th>Author</th><th>Name</th><th>Publisher</th>
+      <th>Price</th><th>Pages</th><th>Class</th><th>Copies</th>
+      <th>Available</th><th>Action</th>
+    </tr>`;
+  
+  if(!pageBooks.length){
+    table.innerHTML += "<tr><td colspan='10'>No books found</td></tr>";
+  } else {
+    const rows = pageBooks.map(b=>{
+      const available = (b.copies||0)-(b.issuedCount||0);
+      return `
+        <tr>
+          <td>${escapeHtml(b.code)}</td>
+          <td>${escapeHtml(b.author)}</td>
+          <td>${escapeHtml(b.name)}</td>
+          <td>${escapeHtml(b.publisher)}</td>
+          <td>${b.price||""}</td>
+          <td>${b.pages||""}</td>
+          <td>${escapeHtml(b.class)}</td>
+          <td>${b.copies||0}</td>
+          <td>${available>0?available:"<span style='color:#d9534f'>None</span>"}</td>
+          <td><button onclick="deleteBook('${encodeURIComponent(b.code)}')" style="background:#ef4444;color:#fff;border-radius:6px;padding:4px 8px;">Delete</button></td>
+        </tr>`;
+    }).join("");
+    table.innerHTML += rows;
+  }
+
+  pagination.innerHTML = `
+    <button onclick="prevPage()" ${currentPage===1?"disabled":""}>◀ Prev</button>
+    <span style="margin:0 12px;">Page ${currentPage} of ${totalPages}</span>
+    <button onclick="nextPage()" ${currentPage===totalPages?"disabled":""}>Next ▶</button>`;
+}
+
+function nextPage(){
+  const search = document.getElementById("search").value.trim().toLowerCase();
+  const totalPages = Math.ceil(books.filter(b =>
+    (b.code||"").toLowerCase().includes(search) ||
+    (b.name||"").toLowerCase().includes(search) ||
+    (b.author||"").toLowerCase().includes(search) ||
+    (b.class||"").toLowerCase().includes(search)
+  ).length / PAGE_SIZE) || 1;
+  if(currentPage < totalPages){ currentPage++; render(); }
+}
+
+function prevPage(){
+  if(currentPage > 1){ currentPage--; render(); }
+}
+
+function deleteBook(codeEsc){
+  const code = decodeURIComponent(codeEsc);
+  if(!confirm(`Delete book "${code}"?`)) return;
+  books = books.filter(b => b.code.toLowerCase() !== code.toLowerCase());
+  save(); render();
+}
+
+function clearAllBooks(){
+  if(confirm("Clear ALL books?")){ books=[]; save(); render(); }
+}
+
+function escapeHtml(s){return s?String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])):"";}
+
+render();
+</script>
+
+
+</body>
+</html>
