@@ -78,29 +78,63 @@
 </div>
 
 <script>
-if(localStorage.getItem("loggedIn") !== "true") {
+if (localStorage.getItem("loggedIn") !== "true") {
   window.location.href = "login.html";
 }
 
 const BOOKS_KEY = "booksData_v2";
-let books = JSON.parse(localStorage.getItem(BOOKS_KEY) || "[]");
+let books = [];
+
+// 🔹 Load books from Google Sheet instead of localStorage
+function loadBooksFromGoogleSheet() {
+  fetch("https://script.google.com/macros/s/AKfycby5oAhqISvgtIaCxtHZvPGLvoDDlYlXz2hS9fmu9FHA3vnSpS3HpEXpNqdUbMQsP7ag/exec")
+    .then(res => res.json())
+    .then(data => {
+      console.log("Books from Google Sheets:", data);
+      
+      // Convert each row to a proper book object
+      books = data.map(b => ({
+        code: String(b["BOOK CODE"] || "").trim(),
+        author: String(b["BOOK AUTHOR"] || "").trim(),
+        name: String(b["BOOK NAME"] || "").trim(),
+        publisher: String(b["PUBLISHER"] || "").trim(),
+        price: String(b["PRICE OF THE BOOK"] || "").trim(),
+        pages: String(b["TOTAL PAGES"] || "").trim(),
+        class: String(b["BOOK CLASS"] || "").trim(),
+        copies: Number(b["COPIES"] || 1),
+        issuedCount: 0
+      }));
+
+      save();
+      render();
+    })
+    .catch(err => {
+      console.error("Error loading from Google Sheets:", err);
+      books = JSON.parse(localStorage.getItem(BOOKS_KEY) || "[]");
+      render();
+    });
+}
+
+
+
+  
 
 function save() {
   localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
 }
 
-function goToIssueReturn(){
+function goToIssueReturn() {
   location.href = "issue_return.html";
 }
-function logout(){
+function logout() {
   localStorage.removeItem("loggedIn");
   location.href = "login.html";
 }
 
-function addBook(){
+function addBook() {
   const code = bookCode.value.trim();
   const name = bookName.value.trim();
-  if(!code || !name) return alert("Please enter at least BOOK CODE and BOOK NAME.");
+  if (!code || !name) return alert("Please enter at least BOOK CODE and BOOK NAME.");
 
   const book = {
     code,
@@ -115,7 +149,7 @@ function addBook(){
   };
 
   const existing = books.find(b => b.code.toLowerCase() === code.toLowerCase());
-  if(existing){
+  if (existing) {
     existing.copies += book.copies;
   } else {
     books.push(book);
@@ -125,24 +159,24 @@ function addBook(){
   render();
 }
 
-function clearInputs(){
+function clearInputs() {
   ["bookCode","bookAuthor","bookName","bookPublisher","bookPrice","bookPages","bookClass"].forEach(id=>document.getElementById(id).value="");
   bookCount.value = 1;
 }
 
-function importExcel(evt){
+function importExcel(evt) {
   const file = evt.target.files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = e=>{
+  reader.onload = e => {
     const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:"" });
     let count = 0;
-    rows.forEach(r=>{
+    rows.forEach(r => {
       const code = (r["BOOK CODE"]||"").toString().trim();
       const name = (r["BOOK NAME"]||"").toString().trim();
       if(!code || !name) return;
-      const b = books.find(x=>x.code.toLowerCase()===code.toLowerCase());
+      const b = books.find(x => x.code.toLowerCase() === code.toLowerCase());
       if(b) b.copies += Number(r["COPIES"]||1);
       else books.push({
         code,
@@ -164,7 +198,7 @@ function importExcel(evt){
   reader.readAsArrayBuffer(file);
 }
 
-function exportBooks(){
+function exportBooks() {
   if(!books.length) return alert("No books to export.");
   const ws = XLSX.utils.json_to_sheet(books);
   const wb = XLSX.utils.book_new();
@@ -175,7 +209,7 @@ function exportBooks(){
 let currentPage = 1;
 const PAGE_SIZE = 50;
 
-function render(){
+function render() {
   const search = document.getElementById("search").value.trim().toLowerCase();
   const table = document.getElementById("book-table");
   const pagination = document.getElementById("pagination");
@@ -256,8 +290,40 @@ function clearAllBooks(){
 
 function escapeHtml(s){return s?String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])):"";}
 
-render();
+// ✅ Load Google Sheet data on page load
+// ✅ Load Google Sheet data on page load
+function loadBooksFromGoogleSheet() {
+  fetch("https://script.google.com/macros/s/AKfycbwZZAS5zOwm6JbdlVZNtX7PAXAV-ww0Xu6dD9Mzr6S2iKTKGfcraNoit6p1GadQ6I-5/exec")
+    .then(res => res.json())
+    .then(data => {
+      console.log("Books from Google Sheets:", data);
+
+      books = data.map(b => ({
+        code: String(b["BOOK CODE"] || "").trim(),
+        author: String(b["BOOK AUTHOR"] || "").trim(),
+        name: String(b["BOOK NAME"] || "").trim(),
+        publisher: String(b["PUBLISHER"] || "").trim(),
+        price: String(b["PRICE OF THE BOOK"] || "").trim(),
+        pages: String(b["TOTAL PAGES"] || "").trim(),
+        class: String(b["BOOK CLASS"] || "").trim(),
+        copies: Number(b["COPIES"] || 1),
+        issuedCount: 0
+      }));
+
+      save();
+      render();
+    })
+    .catch(err => {
+      console.error("Error loading from Google Sheets:", err);
+      books = JSON.parse(localStorage.getItem(BOOKS_KEY) || "[]");
+      render();
+    });
+}
+
+loadBooksFromGoogleSheet();
+
 </script>
+
 
 
 </body>
