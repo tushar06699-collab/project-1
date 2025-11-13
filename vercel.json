@@ -1,0 +1,7 @@
+{
+  "routes": [
+    { "src": "/", "dest": "/index.html" },
+    { "src": "/books.html", "dest": "/books.html" },
+    { "src": "/issue_return.html", "dest": "/issue_return.html" }
+  ]
+}
