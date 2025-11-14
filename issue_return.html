@@ -50,18 +50,15 @@
 <script>
 if (localStorage.getItem("loggedIn") !== "true") window.location.href = "login.html";
 
-// ✅ unified key names
 const BOOKS_KEY = "booksData_v2";
 const RECORDS_KEY = "recordsData_v2";
 
-// ✅ load data safely
 let books = JSON.parse(localStorage.getItem(BOOKS_KEY) || "[]");
 let records = JSON.parse(localStorage.getItem(RECORDS_KEY) || "[]");
 
 if (!Array.isArray(books)) books = [];
 if (!Array.isArray(records)) records = [];
 
-// 🔍 Fetch book details automatically
 function fetchBookDetails(type) {
   const inputId = type === "issue" ? "issueBookId" : "returnBookId";
   const boxId = type === "issue" ? "issueDetails" : "returnDetails";
@@ -87,14 +84,13 @@ function fetchBookDetails(type) {
   `;
 }
 
-// 🟢 Issue Book
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwV_3hfax8kOQsy45EzmnKXIliCXZBhWP5irkprou5vbAmg_yKwnsaLB0cKiZlsj_t6/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw0xfwIPO9J3m8wmXB2Q8TkPRGWiu5M4czkfItcp_iNf2tSlwvvO_3kMX9ZK4JEFyhP/exec";
 
-// 🟢 Issue Book
 function issueBook() {
   const code = document.getElementById("issueBookId").value.trim();
   const student = document.getElementById("issueTo").value.trim();
   const b = books.find(x => (x.code || "").toLowerCase() === code.toLowerCase());
+
   if (!b) return alert("Book not found!");
   if (!student) return alert("Enter student name!");
 
@@ -117,18 +113,17 @@ function issueBook() {
   save();
   render();
 
-  // 🧾 also send to Google Sheet
   fetch(SCRIPT_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...record, action: "ISSUED" })
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...record, action: "ISSUE" })
   });
 
-  alert(`✅ Book "${b.name}" issued to ${student}`);
+  alert(`📘 Book "${b.name}" issued to ${student}`);
   resetIssue();
 }
 
-// 🔵 Return Book
 function returnBook() {
   const code = document.getElementById("returnBookId").value.trim();
   const b = books.find(x => (x.code || "").toLowerCase() === code.toLowerCase());
@@ -138,43 +133,77 @@ function returnBook() {
   if (!lastIssued) return alert("No pending issue record found for this book!");
 
   b.issuedCount = Math.max((b.issuedCount || 1) - 1, 0);
+
   lastIssued.status = "Returned";
   lastIssued.returnDate = new Date().toLocaleString();
 
   save();
   render();
 
-  // 🧾 also send to Google Sheet
   fetch(SCRIPT_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...lastIssued, action: "RETURNED" })
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...lastIssued, action: "RETURN" })
   });
 
-  alert(`📗 Book "${b.name}" returned successfully`);
+  alert(`📗 Book "${b.name}" returned`);
   resetReturn();
 }
 
-// 🧾 Render Records
+function deleteRecord(index) {
+  if (!confirm("Are you sure you want to delete this record?")) return;
+
+  const rec = records[index];
+
+  const b = books.find(x => x.code === rec.code);
+  if (b && rec.status === "Issued") {
+      b.issuedCount = Math.max((b.issuedCount || 1) - 1, 0);
+  }
+
+  records.splice(index, 1);
+  save();
+  render();
+
+  fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...rec, action: "DELETE" })
+  });
+}
+
 function render() {
   const t = document.getElementById("record-table");
-  t.innerHTML = "<tr><th>Book Code</th><th>Name</th><th>Author</th><th>Student</th><th>Issue Date</th><th>Status</th><th>Return Date</th></tr>";
-  records.forEach(r => {
+  t.innerHTML = `
+    <tr>
+      <th>Book Code</th>
+      <th>Name</th>
+      <th>Author</th>
+      <th>Student</th>
+      <th>Issue Date</th>
+      <th>Status</th>
+      <th>Return Date</th>
+      <th>Delete</th>
+    </tr>
+  `;
+
+  records.forEach((r, i) => {
     t.innerHTML += `
       <tr>
-        <td>${r.code || "-"}</td>
-        <td>${r.name || "-"}</td>
-        <td>${r.author || "-"}</td>
-        <td>${r.student || "-"}</td>
-        <td>${r.date || "-"}</td>
-        <td>${r.status || "-"}</td>
+        <td>${r.code}</td>
+        <td>${r.name}</td>
+        <td>${r.author}</td>
+        <td>${r.student}</td>
+        <td>${r.date}</td>
+        <td>${r.status}</td>
         <td>${r.returnDate || "-"}</td>
+        <td><button class="btn-danger" onclick="deleteRecord(${i})">Delete</button></td>
       </tr>
     `;
   });
 }
 
-// 💾 Save to localStorage
 function save() {
   localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
   localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
@@ -185,10 +214,12 @@ function resetIssue() {
   issueTo.value = "";
   document.getElementById("issueDetails").style.display = "none";
 }
+
 function resetReturn() {
   returnBookId.value = "";
   document.getElementById("returnDetails").style.display = "none";
 }
+
 function logout() {
   localStorage.removeItem("loggedIn");
   window.location.href = "login.html";
