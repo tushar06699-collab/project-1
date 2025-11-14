@@ -84,8 +84,43 @@ function fetchBookDetails(type) {
   `;
 }
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw0xfwIPO9J3m8wmXB2Q8TkPRGWiu5M4czkfItcp_iNf2tSlwvvO_3kMX9ZK4JEFyhP/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwS__xCuxsR6ejvA6eVa6gbkeESKHRBX8AuTBoFWPXyHyDRqoo-NNxLngIXMih-ZGg/exec";
 
+
+/* ----------------------------------------------------
+     ✅ CLOUD SYNC — LOAD DATA FROM GOOGLE SHEETS
+-----------------------------------------------------*/
+async function loadCloudRecords() {
+  try {
+    const res = await fetch(SCRIPT_URL);
+    const data = await res.json();
+
+    records = [];
+
+    data.forEach(r => {
+      records.push({
+        code: r.code,
+        name: r.name,
+        author: r.author,
+        publisher: r.publisher,
+        student: r.student,
+        date: r.date,
+        returnDate: r.returnDate,
+        status: r.status
+      });
+    });
+
+    save();
+    render();
+  } catch (err) {
+    console.error("Cloud load error:", err);
+  }
+}
+
+
+/* ----------------------------------------------------
+                 ISSUE BOOK
+-----------------------------------------------------*/
 function issueBook() {
   const code = document.getElementById("issueBookId").value.trim();
   const student = document.getElementById("issueTo").value.trim();
@@ -107,6 +142,7 @@ function issueBook() {
     student,
     date: new Date().toLocaleString(),
     status: "Issued",
+    returnDate: ""
   };
 
   records.push(record);
@@ -114,23 +150,27 @@ function issueBook() {
   render();
 
   fetch(SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...record, action: "ISSUE" })
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...record, action: "ISSUE" })
   });
 
   alert(`📘 Book "${b.name}" issued to ${student}`);
   resetIssue();
 }
 
+
+/* ----------------------------------------------------
+                 RETURN BOOK
+-----------------------------------------------------*/
 function returnBook() {
   const code = document.getElementById("returnBookId").value.trim();
   const b = books.find(x => (x.code || "").toLowerCase() === code.toLowerCase());
   if (!b) return alert("Book not found!");
 
   const lastIssued = [...records].reverse().find(x => x.code === b.code && x.status === "Issued");
-  if (!lastIssued) return alert("No pending issue record found for this book!");
+  if (!lastIssued) return alert("No pending issue record found!");
 
   b.issuedCount = Math.max((b.issuedCount || 1) - 1, 0);
 
@@ -141,16 +181,20 @@ function returnBook() {
   render();
 
   fetch(SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...lastIssued, action: "RETURN" })
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...lastIssued, action: "RETURN" })
   });
 
   alert(`📗 Book "${b.name}" returned`);
   resetReturn();
 }
 
+
+/* ----------------------------------------------------
+                 DELETE RECORD
+-----------------------------------------------------*/
 function deleteRecord(index) {
   if (!confirm("Are you sure you want to delete this record?")) return;
 
@@ -158,7 +202,7 @@ function deleteRecord(index) {
 
   const b = books.find(x => x.code === rec.code);
   if (b && rec.status === "Issued") {
-      b.issuedCount = Math.max((b.issuedCount || 1) - 1, 0);
+    b.issuedCount = Math.max((b.issuedCount || 1) - 1, 0);
   }
 
   records.splice(index, 1);
@@ -166,13 +210,17 @@ function deleteRecord(index) {
   render();
 
   fetch(SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...rec, action: "DELETE" })
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...rec, action: "DELETE" })
   });
 }
 
+
+/* ----------------------------------------------------
+                 RENDER TABLE
+-----------------------------------------------------*/
 function render() {
   const t = document.getElementById("record-table");
   t.innerHTML = `
@@ -204,6 +252,10 @@ function render() {
   });
 }
 
+
+/* ----------------------------------------------------
+                 UTILITIES
+-----------------------------------------------------*/
 function save() {
   localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
   localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
@@ -225,7 +277,12 @@ function logout() {
   window.location.href = "login.html";
 }
 
-render();
+
+/* ----------------------------------------------------
+     ⚡ LOAD CLOUD DATA ON PAGE START
+-----------------------------------------------------*/
+loadCloudRecords();
 </script>
+
 </body>
 </html>
