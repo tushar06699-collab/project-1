@@ -25,6 +25,8 @@
   <h2>🔄 Issue / Return Books</h2>
   <div>
     <button onclick="window.location.href='books.html'" class="btn-main">Go to Books</button>
+    <button id="syncBtn" class="btn-main" title="Sync from cloud">Sync</button>
+    <span id="syncStatus" style="margin-left:10px;font-size:0.9em;color:#066;"></span>
     <button onclick="logout()" class="btn-danger">Logout</button>
   </div>
 </div>
@@ -84,36 +86,87 @@ function fetchBookDetails(type) {
   `;
 }
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwS__xCuxsR6ejvA6eVa6gbkeESKHRBX8AuTBoFWPXyHyDRqoo-NNxLngIXMih-ZGg/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyPP73_WYc68C50lZPG-QWRBTfmLJIyimBLtE7ORQK8hGA_LMu0e63tF8xekYtzpmmp/exec";
 
 
 /* ----------------------------------------------------
      ✅ CLOUD SYNC — LOAD DATA FROM GOOGLE SHEETS
 -----------------------------------------------------*/
 async function loadCloudRecords() {
+  const syncBtn = document.getElementById('syncBtn');
+  const syncStatus = document.getElementById('syncStatus');
+
+  if (location.protocol === 'file:' || location.origin === 'null') {
+    if (syncStatus) syncStatus.textContent = 'Serve over HTTP to enable cloud sync';
+    console.warn('Running from file:// — CORS will block Google Apps Script requests. Start a local HTTP server.');
+    return;
+  }
+
   try {
-    const res = await fetch(SCRIPT_URL);
-    const data = await res.json();
+    if (syncBtn) syncBtn.disabled = true;
+    if (syncStatus) syncStatus.textContent = 'Syncing...';
 
-    records = [];
+    const url = SCRIPT_URL + '?action=getData&t=' + Date.now();
+    const res = await fetch(url, { cache: 'no-store' });
+    const text = await res.text();
+    console.log('RAW SERVER RESPONSE:', text.slice(0, 1000));
 
-    data.forEach(r => {
-      records.push({
-        code: r.code,
-        name: r.name,
-        author: r.author,
-        publisher: r.publisher,
-        student: r.student,
-        date: r.date,
-        returnDate: r.returnDate,
-        status: r.status
-      });
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      console.error('Cloud load error: server returned non-JSON:', text.slice(0, 500));
+      if (syncStatus) syncStatus.textContent = 'Server returned non-JSON';
+      alert('Sync failed: server returned non-JSON response. Check console/Network.');
+      return;
+    }
+
+    if (json.error) {
+      console.error('Server error:', json.error);
+      if (syncStatus) syncStatus.textContent = 'Server error';
+      alert('Sync failed: ' + json.error);
+      return;
+    }
+
+    const rows = Array.isArray(json.data) ? json.data : [];
+    if (rows.length < 2) {
+      records = [];
+      save();
+      render();
+      if (syncStatus) syncStatus.textContent = 'No records';
+      return;
+    }
+
+    const header = rows[0].map(h => (h || '').toString().trim());
+    const body = rows.slice(1);
+
+    records = body.map(r => {
+      const obj = {};
+      header.forEach((col, i) => { obj[col] = r[i]; });
+      return {
+        code: (obj['code'] || obj['Code'] || obj['Book Code'] || obj['book_code'] || '').toString(),
+        name: (obj['name'] || obj['Name'] || obj['Book Name'] || '').toString(),
+        author: (obj['author'] || obj['Author'] || '').toString(),
+        publisher: (obj['publisher'] || obj['Publisher'] || '').toString(),
+        student: (obj['student'] || obj['Student'] || '').toString(),
+        date: (obj['date'] || obj['Issue Date'] || '').toString(),
+        returnDate: (obj['returnDate'] || obj['Return Date'] || '').toString(),
+        status: (obj['status'] || obj['Status'] || '').toString()
+      };
     });
 
     save();
     render();
+    if (syncStatus) syncStatus.textContent = 'Synced ✓';
+    setTimeout(() => { if (syncStatus) syncStatus.textContent = ''; }, 2000);
   } catch (err) {
     console.error("Cloud load error:", err);
+    console.error("Error message:", err.message);
+    console.error("Error stack:", err.stack);
+    if (syncStatus) syncStatus.textContent = 'Sync failed: ' + (err.message || 'unknown error');
+    alert('Sync failed: ' + (err.message || err) + '. Check console (F12) for details.');
+  } finally {
+    if (syncBtn) syncBtn.disabled = false;
   }
 }
 
@@ -149,13 +202,21 @@ function issueBook() {
   save();
   render();
 
-  fetch(SCRIPT_URL, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...record, action: "ISSUE" })
-  });
-
+  (async () => {
+    try {
+      const form = new URLSearchParams();
+      Object.entries({ ...record, action: "ISSUE" }).forEach(([k,v]) => form.append(k, v));
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        body: form
+      });
+      const j = await res.json().catch(() => ({}));
+       if (!j || !j.success) console.warn('Issue POST response:', j);
+     } catch (err) {
+       console.error('Issue POST failed:', err);
+       alert('Failed to send issue to server. Check console.');
+     }
+   })();
   alert(`📘 Book "${b.name}" issued to ${student}`);
   resetIssue();
 }
@@ -180,13 +241,18 @@ function returnBook() {
   save();
   render();
 
-  fetch(SCRIPT_URL, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...lastIssued, action: "RETURN" })
-  });
-
+  (async () => {
+     try {
+      const form = new URLSearchParams();
+      Object.entries({ ...lastIssued, action: "RETURN" }).forEach(([k,v]) => form.append(k, v));
+      const res = await fetch(SCRIPT_URL, { method: "POST", body: form });
+      const j = await res.json().catch(() => ({}));
+      if (!j || !j.success) console.warn('Return POST response:', j);
+     } catch (err) {
+       console.error('Return POST failed:', err);
+       alert('Failed to send return to server. Check console.');
+     }
+   })();
   alert(`📗 Book "${b.name}" returned`);
   resetReturn();
 }
@@ -209,12 +275,19 @@ function deleteRecord(index) {
   save();
   render();
 
-  fetch(SCRIPT_URL, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...rec, action: "DELETE" })
-  });
+  (async () => {
+     try {
+      const form = new URLSearchParams();
+      Object.entries({ ...rec, action: "DELETE" }).forEach(([k,v]) => form.append(k, v));
+      const res = await fetch(SCRIPT_URL, { method: "POST", body: form });
+      const j = await res.json().catch(() => ({}));
+      if (!j || !j.success) console.warn('Delete POST response:', j);
+     } catch (e) {
+       console.warn('Delete response not JSON', e);
+     }
+   }).catch(err => {
+     console.error('Delete POST failed:', err);
+   });
 }
 
 
@@ -282,6 +355,18 @@ function logout() {
      ⚡ LOAD CLOUD DATA ON PAGE START
 -----------------------------------------------------*/
 loadCloudRecords();
+
+// add DOM ready handlers to attach sync and auto-sync
+window.addEventListener('DOMContentLoaded', () => {
+  const syncBtn = document.getElementById('syncBtn');
+  if (syncBtn) syncBtn.addEventListener('click', loadCloudRecords);
+  // auto-sync when tab becomes active and every 30s (only when served over HTTP)
+  if (!(location.protocol === 'file:' || location.origin === 'null')) {
+    loadCloudRecords();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) loadCloudRecords(); });
+    setInterval(loadCloudRecords, 30000);
+  }
+});
 </script>
 
 </body>
