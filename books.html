@@ -79,7 +79,7 @@
 
 <script>
 if (localStorage.getItem("loggedIn") !== "true") {
-  window.location.href = "login.html";
+  window.location.href = "index.html";
 }
 
 const BOOKS_KEY = "booksData_v2";
@@ -128,7 +128,7 @@ function goToIssueReturn() {
 }
 function logout() {
   localStorage.removeItem("loggedIn");
-  location.href = "login.html";
+  location.href = "index.html";
 }
 
 function addBook() {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Issue / Return Books</title>
+<title>Issue / Return Books (Teachers)</title>
 <style>
   body{font-family:'Poppins',sans-serif;background:#f8f9fa;margin:0;padding:20px;}
   .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
@@ -20,16 +20,14 @@
 </style>
 </head>
 <body>
-<div class="topbar">
-  <h2>🔄 Issue / Return Books</h2>
-  <div>
-    <button onclick="window.location.href='issue_teacher.html'" 
-        style="background:#ff9800;color:white;font-weight:600;border:none;padding:10px;border-radius:8px;">
-  Issue to Teachers
 
+<div class="topbar">
+  <h2>🍎 Issue / Return Books (Teachers)</h2>
+  <div>
+    <button onclick="window.location.href='issue_return.html'" class="btn-main">Issue to Students</button>
     <button onclick="window.location.href='books.html'" class="btn-main">Go to Books</button>
     <button id="syncBtn" class="btn-main" title="Sync from cloud">Sync</button>
-    <span id="syncStatus" style="margin-left:10px;font-size:0.9em;color:rgb(47, 246, 36);"></span>
+    <span id="syncStatus" style="margin-left:10px;font-size:0.9em;color:#066;"></span>
     <button onclick="logout()" class="btn-danger">Logout</button>
   </div>
 </div>
@@ -38,8 +36,8 @@
   <h3>📘 Issue Book</h3>
   <input id="issueBookId" placeholder="Enter Book Code" oninput="fetchBookDetails('issue')">
   <div id="issueDetails" class="details-box" style="display:none;"></div>
-  <input id="issueTo" placeholder="Student Name / Roll No">
-  <input type="number" id="issueForDays" placeholder="Issue For Days (Default: 7)" value="7" min="1">
+  <input id="issueTo" placeholder="Teacher Name / ID">
+  <input type="number" id="issueForDays" placeholder="Issue For Days (Default: 30)" value="30" min="1">
   <button onclick="issueBook()" class="btn-main">Issue</button>
 </div>
 
@@ -57,8 +55,9 @@
 if (localStorage.getItem("loggedIn") !== "true") window.location.href = "index.html";
 
 const BOOKS_KEY = "booksData_v2";
-const RECORDS_KEY = "recordsData_v2";
-const FINE_PER_DAY = 5; // Fine amount in Rupees (₹5)
+const RECORDS_KEY = "recordsData_v2_teachers"; // Separate records key for clarity (Optional)
+// FINE PER DAY SET TO 0 FOR TEACHERS
+const FINE_PER_DAY = 0; 
 
 let books = JSON.parse(localStorage.getItem(BOOKS_KEY) || "[]");
 let records = JSON.parse(localStorage.getItem(RECORDS_KEY) || "[]");
@@ -71,12 +70,11 @@ if (!Array.isArray(records)) records = [];
 function calculateDueDate(issueDate, days) {
     const date = new Date(issueDate);
     date.setDate(date.getDate() + parseInt(days, 10));
-    // Return a simple date string for display, excluding time
     return date.toLocaleDateString(); 
 }
 
 /* ----------------------------------------------------
-                   FETCH BOOK DETAILS (UPDATED for student)
+                   FETCH BOOK DETAILS
 -----------------------------------------------------*/
 function fetchBookDetails(type) {
   const inputId = type === "issue" ? "issueBookId" : "returnBookId";
@@ -107,10 +105,10 @@ function fetchBookDetails(type) {
     const issuedRecord = [...records].reverse().find(x => x.code.toLowerCase() === code.toLowerCase() && x.status === "Issued");
 
     if (issuedRecord) {
-      // ADDED STUDENT DETAILS FOR RETURN SECTION
+      // DISPLAY CHANGE: "Issued to"
       detailsHTML += `
         <hr style="border-top: 1px solid #eee; margin: 8px 0;">
-        <p style="color:#022;"><b>Currently Issued to:</b> ${issuedRecord.student || "N/A"}</p>
+        <p style="color:#022;"><b>Currently Issued to (Teacher):</b> ${issuedRecord.student || "N/A"}</p>
         <p style="color:#022;"><b>Issue Date:</b> ${issuedRecord.date || "-"}</p>
         <p style="color:#022;"><b>Due Date:</b> ${issuedRecord.dueDate || "-"}</p>
       `;
@@ -124,11 +122,11 @@ function fetchBookDetails(type) {
 }
 
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyPP73_WYc68C50lZPG-QWRBTfmLJIyimBLtE7ORQK8hGA_LMu0e63tF8xekYtzpmmp/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyO034F6qc_s_sp19Z8RzokgO-zALUUnFcrFqR_hTmM-Mgoyc8-5CZf-n8WsGfv6zJJ/exec";
 
 
 /* ----------------------------------------------------
-       ✅ CLOUD SYNC — LOAD DATA FROM GOOGLE SHEETS
+         ✅ CLOUD SYNC — LOAD DATA FROM GOOGLE SHEETS
 -----------------------------------------------------*/
 async function loadCloudRecords() {
   const syncBtn = document.getElementById('syncBtn');
@@ -144,7 +142,8 @@ async function loadCloudRecords() {
     if (syncBtn) syncBtn.disabled = true;
     if (syncStatus) syncStatus.textContent = 'Syncing...';
 
-    const url = SCRIPT_URL + '?action=getData&t=' + Date.now();
+    // ACTION change: Use a specific action for teachers if you want to use a different Sheet/Tab
+    const url = SCRIPT_URL + '?action=getDataTeacher&t=' + Date.now(); 
     const res = await fetch(url, { cache: 'no-store' });
     const text = await res.text();
     console.log('RAW SERVER RESPONSE:', text.slice(0, 1000));
@@ -186,8 +185,8 @@ async function loadCloudRecords() {
         name: (obj['name'] || obj['Name'] || obj['Book Name'] || '').toString(),
         author: (obj['author'] || obj['Author'] || '').toString(),
         publisher: (obj['publisher'] || obj['Publisher'] || '').toString(),
-        student: (obj['student'] || obj['Student'] || '').toString(),
-        // Load Days, Due Date, and Fine
+        // Renamed 'student' key to 'teacher' or kept 'student' for Sheets compatibility
+        student: (obj['student'] || obj['Student'] || '').toString(), 
         issueDays: parseInt(obj['issueDays'] || obj['Issue Days'] || 0, 10),
         date: (obj['date'] || obj['Issue Date'] || '').toString(),
         dueDate: (obj['dueDate'] || obj['Due Date'] || '').toString(),
@@ -203,8 +202,6 @@ async function loadCloudRecords() {
     setTimeout(() => { if (syncStatus) syncStatus.textContent = ''; }, 2000);
   } catch (err) {
     console.error("Cloud load error:", err);
-    console.error("Error message:", err.message);
-    console.error("Error stack:", err.stack);
     if (syncStatus) syncStatus.textContent = 'Sync failed: ' + (err.message || 'unknown error');
     alert('Sync failed: ' + (err.message || err) + '. Check console (F12) for details.');
   } finally {
@@ -218,14 +215,14 @@ async function loadCloudRecords() {
 -----------------------------------------------------*/
 function issueBook() {
   const code = document.getElementById("issueBookId").value.trim();
-  const student = document.getElementById("issueTo").value.trim();
-  // Get days, default to 7
-  const issueDays = parseInt(document.getElementById("issueForDays").value.trim() || '7', 10); 
+  // RETAINING 'student' VARIABLE NAME FOR DATA STRUCTURE CONSISTENCY
+  const student = document.getElementById("issueTo").value.trim(); 
+  const issueDays = parseInt(document.getElementById("issueForDays").value.trim() || '30', 10); 
   
   const b = books.find(x => (x.code || "").toLowerCase() === code.toLowerCase());
 
   if (!b) return alert("Book not found!");
-  if (!student) return alert("Enter student name!");
+  if (!student) return alert("Enter teacher name/ID!"); // ALERT CHANGE
   if (issueDays <= 0) return alert("Issue days must be a positive number!");
 
   const available = (b.copies || 0) - (b.issuedCount || 0);
@@ -257,7 +254,8 @@ function issueBook() {
   (async () => {
     try {
       const form = new URLSearchParams();
-      Object.entries({ ...record, action: "ISSUE" }).forEach(([k,v]) => form.append(k, v));
+      // ACTION change: Use a specific action for teachers if you want to use a different Sheet/Tab
+      Object.entries({ ...record, action: "ISSUE_TEACHER" }).forEach(([k,v]) => form.append(k, v)); 
       const res = await fetch(SCRIPT_URL, {
         method: "POST",
         body: form
@@ -269,7 +267,7 @@ function issueBook() {
         alert('Failed to send issue to server. Check console.');
       }
     })();
-  alert(`📘 Book "${b.name}" issued to ${student} for ${issueDays} days. Due: ${dueDate}`);
+  alert(`📘 Book "${b.name}" issued to Teacher: ${student} for ${issueDays} days. Due: ${dueDate}`);
   resetIssue();
 }
 
@@ -291,24 +289,28 @@ function returnBook() {
   lastIssued.status = "Returned";
   lastIssued.returnDate = returnDateObj.toLocaleString();
 
-  // --- FINE CALCULATION LOGIC ---
+  // --- FINE CALCULATION LOGIC (Set to 0) ---
   let fine = 0;
   let fineMessage = "";
   
-  // Convert due date string (e.g., 11/15/2025) to Date object for comparison
   const dueDateObj = new Date(lastIssued.dueDate);
-  // Normalize both dates to start of the day for accurate day-count comparison
   dueDateObj.setHours(0, 0, 0, 0); 
   returnDateObj.setHours(0, 0, 0, 0);
 
   if (returnDateObj > dueDateObj) {
-    // Calculate difference in days: (ms difference / ms per day)
     const diffTime = Math.abs(returnDateObj - dueDateObj);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
     
+    // Fine is 0, so fine calculation is ignored for teachers unless FINE_PER_DAY is changed
     fine = diffDays * FINE_PER_DAY;
-    lastIssued.fine = `₹${fine} (${diffDays} days overdue)`;
-    fineMessage = ` (Fine: ₹${fine} for ${diffDays} days overdue)`;
+    
+    if (fine > 0) {
+        lastIssued.fine = `₹${fine} (${diffDays} days overdue)`;
+        fineMessage = ` (Fine: ₹${fine} for ${diffDays} days overdue)`;
+    } else {
+        lastIssued.fine = "₹0 (Overdue, but no fine applied)";
+        fineMessage = " (Overdue, but no fine applied)";
+    }
   } else {
     lastIssued.fine = "₹0 (Returned on time)";
   }
@@ -320,7 +322,8 @@ function returnBook() {
   (async () => {
       try {
       const form = new URLSearchParams();
-      Object.entries({ ...lastIssued, action: "RETURN" }).forEach(([k,v]) => form.append(k, v));
+      // ACTION change: Use a specific action for teachers if you want to use a different Sheet/Tab
+      Object.entries({ ...lastIssued, action: "RETURN_TEACHER" }).forEach(([k,v]) => form.append(k, v)); 
       const res = await fetch(SCRIPT_URL, { method: "POST", body: form });
       const j = await res.json().catch(() => ({}));
       if (!j || !j.success) console.warn('Return POST response:', j);
@@ -354,7 +357,8 @@ function deleteRecord(index) {
   (async () => {
       try {
       const form = new URLSearchParams();
-      Object.entries({ ...rec, action: "DELETE" }).forEach(([k,v]) => form.append(k, v));
+      // ACTION change: Use a specific action for teachers if you want to use a different Sheet/Tab
+      Object.entries({ ...rec, action: "DELETE_TEACHER" }).forEach(([k,v]) => form.append(k, v)); 
       const res = await fetch(SCRIPT_URL, { method: "POST", body: form });
       const j = await res.json().catch(() => ({}));
       if (!j || !j.success) console.warn('Delete POST response:', j);
@@ -376,8 +380,7 @@ function render() {
     <tr>
       <th>Book Code</th>
       <th>Name</th>
-      <th>Student</th>
-      <th>Issue Date</th>
+      <th>Teacher / ID</th> <th>Issue Date</th>
       <th>Days</th> 
       <th>Due Date</th> 
       <th>Status</th>
@@ -388,22 +391,21 @@ function render() {
   `;
 
   records.forEach((r, i) => {
-    // Add logic to highlight overdue books
     let dueDateObj = r.dueDate ? new Date(r.dueDate) : null;
     let now = new Date();
-    now.setHours(0, 0, 0, 0); // Normalize current date
+    now.setHours(0, 0, 0, 0); 
 
     let rowStyle = '';
+    // Overdue highlighting remains useful even if fine is 0
     if (r.status === "Issued" && dueDateObj && now > dueDateObj) {
-        rowStyle = 'style="background-color: #fce2e2;"'; // Light red for overdue
+        rowStyle = 'style="background-color: #fce2e2;"'; 
     }
 
     t.innerHTML += `
       <tr ${rowStyle}>
         <td>${r.code}</td>
         <td>${r.name}</td>
-        <td>${r.student}</td>
-        <td>${r.date}</td>
+        <td>${r.student}</td> <td>${r.date}</td>
         <td>${r.issueDays || "-"}</td> 
         <td>${r.dueDate || "-"}</td> 
         <td>${r.status}</td>
@@ -427,7 +429,7 @@ function save() {
 function resetIssue() {
   issueBookId.value = "";
   issueTo.value = "";
-  issueForDays.value = "7"; // Reset days field
+  issueForDays.value = "30"; // Default days reset
   document.getElementById("issueDetails").style.display = "none";
 }
 
@@ -451,7 +453,6 @@ loadCloudRecords();
 window.addEventListener('DOMContentLoaded', () => {
   const syncBtn = document.getElementById('syncBtn');
   if (syncBtn) syncBtn.addEventListener('click', loadCloudRecords);
-  // auto-sync when tab becomes active and every 30s (only when served over HTTP)
   if (!(location.protocol === 'file:' || location.origin === 'null')) {
     loadCloudRecords();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadCloudRecords(); });
