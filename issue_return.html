@@ -10,7 +10,7 @@
   h2{margin:0;color:#022;}
   input,button{padding:10px;margin:6px;border-radius:8px;border:1px solid #ccc;}
   button{cursor:pointer;font-weight:600;border:none;}
-  .btn-main{background:linear-gradient(90deg,#34d399,#3ec8ff);}
+  .btn-main{background:linear-gradient(90deg,#34d399,#3ec8ff);color:white;}
   .btn-danger{background:linear-gradient(90deg,#fb7185,#f97316);color:white;}
   table{width:100%;border-collapse:collapse;margin-top:10px;}
   th,td{border:1px solid #ddd;padding:8px;text-align:center;}
@@ -36,6 +36,7 @@
   <input id="issueBookId" placeholder="Enter Book Code" oninput="fetchBookDetails('issue')">
   <div id="issueDetails" class="details-box" style="display:none;"></div>
   <input id="issueTo" placeholder="Student Name / Roll No">
+  <input type="number" id="issueForDays" placeholder="Issue For Days (Default: 7)" value="7" min="1">
   <button onclick="issueBook()" class="btn-main">Issue</button>
 </div>
 
@@ -54,6 +55,7 @@ if (localStorage.getItem("loggedIn") !== "true") window.location.href = "login.h
 
 const BOOKS_KEY = "booksData_v2";
 const RECORDS_KEY = "recordsData_v2";
+const FINE_PER_DAY = 5; // Fine amount in Rupees (₹5)
 
 let books = JSON.parse(localStorage.getItem(BOOKS_KEY) || "[]");
 let records = JSON.parse(localStorage.getItem(RECORDS_KEY) || "[]");
@@ -61,6 +63,18 @@ let records = JSON.parse(localStorage.getItem(RECORDS_KEY) || "[]");
 if (!Array.isArray(books)) books = [];
 if (!Array.isArray(records)) records = [];
 
+
+// Utility function to calculate date 'days' from a start date
+function calculateDueDate(issueDate, days) {
+    const date = new Date(issueDate);
+    date.setDate(date.getDate() + parseInt(days, 10));
+    // Return a simple date string for display, excluding time
+    return date.toLocaleDateString(); 
+}
+
+/* ----------------------------------------------------
+                   FETCH BOOK DETAILS (UPDATED for student)
+-----------------------------------------------------*/
 function fetchBookDetails(type) {
   const inputId = type === "issue" ? "issueBookId" : "returnBookId";
   const boxId = type === "issue" ? "issueDetails" : "returnDetails";
@@ -77,20 +91,41 @@ function fetchBookDetails(type) {
 
   const available = (b.copies || 0) - (b.issuedCount || 0);
 
-  box.style.display = "block";
-  box.innerHTML = `
+  // Start building the details box HTML
+  let detailsHTML = `
     <p><b>Book Name:</b> ${b.name || "-"}</p>
     <p><b>Author:</b> ${b.author || "-"}</p>
     <p><b>Publisher:</b> ${b.publisher || "-"}</p>
     <p><b>Available Copies:</b> ${available}</p>
   `;
+
+  if (type === "return") {
+    // Find the currently issued record for this book code
+    const issuedRecord = [...records].reverse().find(x => x.code.toLowerCase() === code.toLowerCase() && x.status === "Issued");
+
+    if (issuedRecord) {
+      // ADDED STUDENT DETAILS FOR RETURN SECTION
+      detailsHTML += `
+        <hr style="border-top: 1px solid #eee; margin: 8px 0;">
+        <p style="color:#022;"><b>Currently Issued to:</b> ${issuedRecord.student || "N/A"}</p>
+        <p style="color:#022;"><b>Issue Date:</b> ${issuedRecord.date || "-"}</p>
+        <p style="color:#022;"><b>Due Date:</b> ${issuedRecord.dueDate || "-"}</p>
+      `;
+    } else {
+      detailsHTML += `<p style='color:green;'>Book is currently **not** issued.</p>`;
+    }
+  }
+
+  box.style.display = "block";
+  box.innerHTML = detailsHTML;
 }
+
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyPP73_WYc68C50lZPG-QWRBTfmLJIyimBLtE7ORQK8hGA_LMu0e63tF8xekYtzpmmp/exec";
 
 
 /* ----------------------------------------------------
-     ✅ CLOUD SYNC — LOAD DATA FROM GOOGLE SHEETS
+       ✅ CLOUD SYNC — LOAD DATA FROM GOOGLE SHEETS
 -----------------------------------------------------*/
 async function loadCloudRecords() {
   const syncBtn = document.getElementById('syncBtn');
@@ -149,9 +184,13 @@ async function loadCloudRecords() {
         author: (obj['author'] || obj['Author'] || '').toString(),
         publisher: (obj['publisher'] || obj['Publisher'] || '').toString(),
         student: (obj['student'] || obj['Student'] || '').toString(),
+        // Load Days, Due Date, and Fine
+        issueDays: parseInt(obj['issueDays'] || obj['Issue Days'] || 0, 10),
         date: (obj['date'] || obj['Issue Date'] || '').toString(),
+        dueDate: (obj['dueDate'] || obj['Due Date'] || '').toString(),
         returnDate: (obj['returnDate'] || obj['Return Date'] || '').toString(),
-        status: (obj['status'] || obj['Status'] || '').toString()
+        status: (obj['status'] || obj['Status'] || '').toString(),
+        fine: (obj['fine'] || obj['Fine'] || '').toString()
       };
     });
 
@@ -172,20 +211,27 @@ async function loadCloudRecords() {
 
 
 /* ----------------------------------------------------
-                 ISSUE BOOK
+                   ISSUE BOOK
 -----------------------------------------------------*/
 function issueBook() {
   const code = document.getElementById("issueBookId").value.trim();
   const student = document.getElementById("issueTo").value.trim();
+  // Get days, default to 7
+  const issueDays = parseInt(document.getElementById("issueForDays").value.trim() || '7', 10); 
+  
   const b = books.find(x => (x.code || "").toLowerCase() === code.toLowerCase());
 
   if (!b) return alert("Book not found!");
   if (!student) return alert("Enter student name!");
+  if (issueDays <= 0) return alert("Issue days must be a positive number!");
 
   const available = (b.copies || 0) - (b.issuedCount || 0);
   if (available <= 0) return alert("No available copies left!");
 
   b.issuedCount = (b.issuedCount || 0) + 1;
+
+  const issueDate = new Date();
+  const dueDate = calculateDueDate(issueDate, issueDays);
 
   const record = {
     code: b.code,
@@ -193,9 +239,12 @@ function issueBook() {
     author: b.author,
     publisher: b.publisher,
     student,
-    date: new Date().toLocaleString(),
+    issueDays: issueDays, 
+    date: issueDate.toLocaleString(), 
+    dueDate: dueDate, 
     status: "Issued",
-    returnDate: ""
+    returnDate: "",
+    fine: ""
   };
 
   records.push(record);
@@ -211,19 +260,19 @@ function issueBook() {
         body: form
       });
       const j = await res.json().catch(() => ({}));
-       if (!j || !j.success) console.warn('Issue POST response:', j);
-     } catch (err) {
-       console.error('Issue POST failed:', err);
-       alert('Failed to send issue to server. Check console.');
-     }
-   })();
-  alert(`📘 Book "${b.name}" issued to ${student}`);
+        if (!j || !j.success) console.warn('Issue POST response:', j);
+      } catch (err) {
+        console.error('Issue POST failed:', err);
+        alert('Failed to send issue to server. Check console.');
+      }
+    })();
+  alert(`📘 Book "${b.name}" issued to ${student} for ${issueDays} days. Due: ${dueDate}`);
   resetIssue();
 }
 
 
 /* ----------------------------------------------------
-                 RETURN BOOK
+                   RETURN BOOK
 -----------------------------------------------------*/
 function returnBook() {
   const code = document.getElementById("returnBookId").value.trim();
@@ -235,31 +284,55 @@ function returnBook() {
 
   b.issuedCount = Math.max((b.issuedCount || 1) - 1, 0);
 
+  const returnDateObj = new Date();
   lastIssued.status = "Returned";
-  lastIssued.returnDate = new Date().toLocaleString();
+  lastIssued.returnDate = returnDateObj.toLocaleString();
+
+  // --- FINE CALCULATION LOGIC ---
+  let fine = 0;
+  let fineMessage = "";
+  
+  // Convert due date string (e.g., 11/15/2025) to Date object for comparison
+  const dueDateObj = new Date(lastIssued.dueDate);
+  // Normalize both dates to start of the day for accurate day-count comparison
+  dueDateObj.setHours(0, 0, 0, 0); 
+  returnDateObj.setHours(0, 0, 0, 0);
+
+  if (returnDateObj > dueDateObj) {
+    // Calculate difference in days: (ms difference / ms per day)
+    const diffTime = Math.abs(returnDateObj - dueDateObj);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    
+    fine = diffDays * FINE_PER_DAY;
+    lastIssued.fine = `₹${fine} (${diffDays} days overdue)`;
+    fineMessage = ` (Fine: ₹${fine} for ${diffDays} days overdue)`;
+  } else {
+    lastIssued.fine = "₹0 (Returned on time)";
+  }
+  // --- END FINE CALCULATION LOGIC ---
 
   save();
   render();
 
   (async () => {
-     try {
+      try {
       const form = new URLSearchParams();
       Object.entries({ ...lastIssued, action: "RETURN" }).forEach(([k,v]) => form.append(k, v));
       const res = await fetch(SCRIPT_URL, { method: "POST", body: form });
       const j = await res.json().catch(() => ({}));
       if (!j || !j.success) console.warn('Return POST response:', j);
-     } catch (err) {
-       console.error('Return POST failed:', err);
-       alert('Failed to send return to server. Check console.');
-     }
-   })();
-  alert(`📗 Book "${b.name}" returned`);
+      } catch (err) {
+        console.error('Return POST failed:', err);
+        alert('Failed to send return to server. Check console.');
+      }
+    })();
+  alert(`📗 Book "${b.name}" returned.${fineMessage}`);
   resetReturn();
 }
 
 
 /* ----------------------------------------------------
-                 DELETE RECORD
+                   DELETE RECORD
 -----------------------------------------------------*/
 function deleteRecord(index) {
   if (!confirm("Are you sure you want to delete this record?")) return;
@@ -276,23 +349,23 @@ function deleteRecord(index) {
   render();
 
   (async () => {
-     try {
+      try {
       const form = new URLSearchParams();
       Object.entries({ ...rec, action: "DELETE" }).forEach(([k,v]) => form.append(k, v));
       const res = await fetch(SCRIPT_URL, { method: "POST", body: form });
       const j = await res.json().catch(() => ({}));
       if (!j || !j.success) console.warn('Delete POST response:', j);
-     } catch (e) {
-       console.warn('Delete response not JSON', e);
-     }
-   }).catch(err => {
-     console.error('Delete POST failed:', err);
-   });
+      } catch (e) {
+        console.warn('Delete response not JSON', e);
+      }
+    }).catch(err => {
+      console.error('Delete POST failed:', err);
+    });
 }
 
 
 /* ----------------------------------------------------
-                 RENDER TABLE
+                   RENDER TABLE
 -----------------------------------------------------*/
 function render() {
   const t = document.getElementById("record-table");
@@ -300,25 +373,39 @@ function render() {
     <tr>
       <th>Book Code</th>
       <th>Name</th>
-      <th>Author</th>
       <th>Student</th>
       <th>Issue Date</th>
+      <th>Days</th> 
+      <th>Due Date</th> 
       <th>Status</th>
       <th>Return Date</th>
+      <th>Fine</th> 
       <th>Delete</th>
     </tr>
   `;
 
   records.forEach((r, i) => {
+    // Add logic to highlight overdue books
+    let dueDateObj = r.dueDate ? new Date(r.dueDate) : null;
+    let now = new Date();
+    now.setHours(0, 0, 0, 0); // Normalize current date
+
+    let rowStyle = '';
+    if (r.status === "Issued" && dueDateObj && now > dueDateObj) {
+        rowStyle = 'style="background-color: #fce2e2;"'; // Light red for overdue
+    }
+
     t.innerHTML += `
-      <tr>
+      <tr ${rowStyle}>
         <td>${r.code}</td>
         <td>${r.name}</td>
-        <td>${r.author}</td>
         <td>${r.student}</td>
         <td>${r.date}</td>
+        <td>${r.issueDays || "-"}</td> 
+        <td>${r.dueDate || "-"}</td> 
         <td>${r.status}</td>
         <td>${r.returnDate || "-"}</td>
+        <td>${r.fine || "-"}</td> 
         <td><button class="btn-danger" onclick="deleteRecord(${i})">Delete</button></td>
       </tr>
     `;
@@ -327,7 +414,7 @@ function render() {
 
 
 /* ----------------------------------------------------
-                 UTILITIES
+                   UTILITIES
 -----------------------------------------------------*/
 function save() {
   localStorage.setItem(BOOKS_KEY, JSON.stringify(books));
@@ -337,6 +424,7 @@ function save() {
 function resetIssue() {
   issueBookId.value = "";
   issueTo.value = "";
+  issueForDays.value = "7"; // Reset days field
   document.getElementById("issueDetails").style.display = "none";
 }
 
@@ -352,7 +440,7 @@ function logout() {
 
 
 /* ----------------------------------------------------
-     ⚡ LOAD CLOUD DATA ON PAGE START
+       ⚡ LOAD CLOUD DATA ON PAGE START
 -----------------------------------------------------*/
 loadCloudRecords();
 
